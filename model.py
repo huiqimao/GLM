@@ -20,7 +20,7 @@ class Wide(nn.Module):
         for m in self.modules():
             # 判断这一层是否为线性层，如果为线性层则初始化权值
             if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight.data, gain=0.001)
+                nn.init.xavier_normal_(m.weight.data, gain=0.01)
 
 
 class Deep(nn.Module):
@@ -63,12 +63,14 @@ class Deep(nn.Module):
         for m in self.modules():
             # 判断这一层是否为线性层，如果为线性层则初始化权值
             if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight.data, gain=0.1)
+                nn.init.xavier_normal_(m.weight.data, gain=1)
 
 
 class PoissonModule(nn.Module):
     def forward(self, x):
-        x = x.sum(dim=1, keepdim=True)
+        # x = x.sum(dim=1, keepdim=True)
+        x = torch.logsumexp(x, dim=1, keepdim=True)
+        x = torch.poisson(x)
         return x
 
 
@@ -94,7 +96,8 @@ class WideDeep(nn.Module):
             deep_input = x_deep_dense
 
         normalizer = nn.BatchNorm1d(num_features=x_wide_dense.shape[1]+deep_input.shape[1])
-        input_tensor = normalizer(torch.cat([x_wide_dense, deep_input], dim=-1))
+        input_tensor = torch.cat([x_wide_dense, deep_input], dim=-1)
+        # input_tensor = normalizer(input_tensor)
         x_wide_dense = input_tensor[:, :x_wide_dense.shape[1]]
         deep_input = input_tensor[:, x_wide_dense.shape[1]:]
         wide_part = self.wide(x_wide_dense)

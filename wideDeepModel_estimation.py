@@ -59,6 +59,8 @@ class GetData(Dataset):
     def shuffle(self):
         self.data = self.data.sample(frac=1).reset_index(drop=True)
 
+    def numpy(self):
+        return self.data.values
 
 # early_stopper = EarlyStopper(patience=3, min_delta=10)
 #     for epoch in np.arange(n_epochs):
@@ -119,8 +121,8 @@ def model(params):
     else:
         Model.initialize()
         print("INITIALIZED MODEL")
-    optimizer = torch.optim.Adam(Model.parameters(), lr=0.00005,  weight_decay=0.0)
-    loss_fn = nn.PoissonNLLLoss(log_input=True, full=False)
+    optimizer = torch.optim.Adam(Model.parameters(), lr=0.0001,  weight_decay=0)
+    loss_fn = nn.PoissonNLLLoss(log_input=False, full=False)
     return Model, optimizer, loss_fn
 
 
@@ -136,22 +138,24 @@ def compute_weight_error(weight_pred, weight_true):
     return error
 
 
-def train(params, train_data):
-    train_data_loader = DataLoader(
-        dataset=train_data,
-        batch_size=16,
-        shuffle=True
-    )
-
+def train(params, train_data, iter):
     loss_log = []
     Model, optimizer, loss_fn = model(params)
-    for x_wide_dense, x_deep_dense, x_deep_sparse, label in train_data_loader:
-        pred = Model(x_wide_dense, x_deep_dense, x_deep_sparse).squeeze()
-        loss = loss_fn(pred, label)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        loss_log.append(loss.item())
+
+    for i in range(iter):
+        train_data.shuffle()
+        train_data_loader = DataLoader(
+            dataset=train_data,
+            batch_size=64,
+            shuffle=True
+        )
+        for x_wide_dense, x_deep_dense, x_deep_sparse, label in train_data_loader:
+            pred = Model(x_wide_dense, x_deep_dense, x_deep_sparse).squeeze()
+            loss = loss_fn(pred, label)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            loss_log.append(loss.item())
     # print('loss:{:.4f}'.format(sum(loss_log)))
     return Model, sum(loss_log)
 
@@ -159,7 +163,7 @@ def train(params, train_data):
 def test(Model, valid_data):
     valid_data_loader = DataLoader(
         dataset=valid_data,
-        batch_size=16,
+        batch_size=64,
         shuffle=True
     )
 
@@ -171,6 +175,7 @@ def test(Model, valid_data):
 
 def run(figure):
     epochs = 100
+    iter = 3
     loss = []
     init_error, error = np.inf, np.inf
     real_weight = [-0.02, -0.005, -0.005, -0.005, -0.005]
@@ -194,16 +199,16 @@ def run(figure):
         print("EPOCH {} started".format(i + 1))
         # train_data.shuffle()
         if i >= 0:
-            param_dict['init_with_save_model'] = False
-        train_model, train_loss = train(param_dict, train_data)
+            param_dict['init_with_save_model'] = True
+        train_model, train_loss = train(param_dict, train_data, iter)
         loss.append(train_loss)
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 100 == 0:
             print("EPOCH {} finished".format(i + 1))
             test(train_model, valid_data)
-            weight, bias = train_model.get_wide_params()
-            error = compute_weight_error(weight, real_weight)
-            print("Weight:", weight, "\nBias:", bias)
-            print("PARAMETERS ERROR: ", error)
+        weight, bias = train_model.get_wide_params()
+        error = compute_weight_error(weight, real_weight)
+        print("Weight:", weight, "\nBias:", bias)
+        print("PARAMETERS ERROR: ", error)
         if init_error > error:
             init_error = error
             train_model.save_model('./model/wide_deep_poisson_model.pt')
